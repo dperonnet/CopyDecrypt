@@ -1,0 +1,10 @@
+{
+  "settings": {
+    "documentationRules": {
+      "companyName": "CopyDecrypt",
+      "xmlHeader": false,
+      "fileNamingConvention": "stylecop"
+    }
+  }
+}
+

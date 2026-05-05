@@ -3,7 +3,7 @@
 #define AppName "CopyDecrypt"
 #define AppExeName "CopyDecrypt.exe"
 #define AppPublisher "Dams"
-#define AppURL "https://github.com/<owner>/<repo>"
+#define AppURL "https://github.com/dperonnet/CopyDecrypt"
 
 [Setup]
 AppId={{C8F1A2C6-0B2A-4D6B-9A72-9A7D4B33B2E0}

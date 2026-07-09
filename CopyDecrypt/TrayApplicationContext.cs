@@ -10,6 +10,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private Icon? _trayCustomIcon;
     private bool _regionCaptureBusy;
     private string? _lastClickableUrl;
+    private ToolStripMenuItem? _menuRegion;
+    private ToolStripMenuItem? _menuClipboard;
+    private bool _optionsDialogOpen;
 
     // UX : on garde les notifications courtes (évite “pollution” dans le centre de notifications).
     private const int BalloonTimeoutMs = 5000;
@@ -19,7 +22,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var initial = _settings.Load();
         StartupManager.Apply(initial.StartWithWindows);
 
-        _hotkeyForm = new HotkeyForm(ProcessRegionCapture, _settings);
+        _hotkeyForm = new HotkeyForm(
+            ProcessRegionCapture,
+            () => ProcessClipboardImage(showErrorIfEmpty: true),
+            ProcessSmartHotkey,
+            _settings);
 
         _trayCustomIcon = TrayIconLoader.TryLoadTrayIcon(AppContext.BaseDirectory);
 
@@ -31,13 +38,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
 
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Lire l’image du presse-papiers (QR / OCR)", null, (_, _) => ProcessClipboardImage());
+        _menuRegion = new ToolStripMenuItem("Sélectionner une zone à l'écran…", null, (_, _) => ProcessRegionCapture());
+        _menuClipboard = new ToolStripMenuItem("Lire l'image du presse-papiers…", null, (_, _) => ProcessClipboardImage(showErrorIfEmpty: true));
+        menu.Items.Add(_menuRegion);
+        menu.Items.Add(_menuClipboard);
         menu.Items.Add("Aide…", null, (_, _) => OpenHelp());
         menu.Items.Add("Options…", null, (_, _) => OpenOptions());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quitter", null, (_, _) => QuitFromTray());
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => ProcessRegionCapture();
+        UpdateMenuShortcuts(initial);
+        _tray.DoubleClick += (_, _) => ProcessDoubleClick();
         _tray.BalloonTipClicked += (_, _) => OpenLastUrlIfAny();
 
         MainForm = _hotkeyForm;
@@ -46,8 +57,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string BuildTrayText(AppSettings s)
     {
-        var hk = s.HotkeyEnabled ? HotkeyFormatter.Format(s) : "raccourci désactivé";
-        return "CopyDecrypt — " + hk + " : zone écran · menu : presse-papiers";
+        if (s.AreHotkeysIdentical())
+            return "CopyDecrypt — " + HotkeyFormatter.FormatRegion(s) + " : zone ou presse-papiers";
+
+        var parts = new List<string>();
+        if (s.HotkeyEnabled)
+            parts.Add(HotkeyFormatter.FormatRegion(s) + " : zone");
+        if (s.ClipboardHotkeyEnabled)
+            parts.Add(HotkeyFormatter.FormatClipboard(s) + " : presse-papiers");
+
+        return parts.Count == 0
+            ? "CopyDecrypt — raccourcis désactivés"
+            : "CopyDecrypt — " + string.Join(" · ", parts);
+    }
+
+    private void ProcessDoubleClick()
+    {
+        var action = _settings.Load().DoubleClickAction;
+        if (action == TrayDoubleClickAction.ClipboardImage)
+            ProcessClipboardImage(showErrorIfEmpty: true);
+        else
+            ProcessRegionCapture();
+    }
+
+    /// <summary>Raccourci unique pour les deux actions : image dans le presse-papiers ou sélection de zone.</summary>
+    private void ProcessSmartHotkey()
+    {
+        if (QrClipboardReader.ClipboardContainsImage())
+            ProcessClipboardImage(showErrorIfEmpty: false);
+        else
+            ProcessRegionCapture();
     }
 
     private void OpenLastUrlIfAny()
@@ -63,7 +102,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch
         {
-            // Ignore : on ne veut pas d’erreur intrusive depuis une notification.
+            // Ignore : on ne veut pas d'erreur intrusive depuis une notification.
         }
     }
 
@@ -75,22 +114,53 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OpenOptions()
     {
-        using var form = new OptionsForm(_settings, RefreshTrayFromSettings);
-        form.ShowDialog();
+        if (_optionsDialogOpen)
+            return;
+
+        _optionsDialogOpen = true;
+        try
+        {
+            using var form = new OptionsForm(_settings, RefreshTrayFromSettings);
+            form.ShowDialog();
+        }
+        finally
+        {
+            _optionsDialogOpen = false;
+        }
     }
 
     private void RefreshTrayFromSettings()
     {
+        var settings = _settings.Load();
         _hotkeyForm.ReloadHotkey();
-        _tray.Text = BuildTrayText(_settings.Load());
+        _tray.Text = BuildTrayText(settings);
+        UpdateMenuShortcuts(settings);
     }
 
-    /// <summary>Raccourci / double-clic : sélection d’une zone à l’écran.</summary>
+    private void UpdateMenuShortcuts(AppSettings settings)
+    {
+        if (_menuRegion is not null)
+        {
+            _menuRegion.ShortcutKeyDisplayString = settings.HotkeyEnabled
+                ? HotkeyFormatter.FormatRegion(settings)
+                : string.Empty;
+        }
+
+        if (_menuClipboard is not null)
+        {
+            _menuClipboard.ShortcutKeyDisplayString = settings.ClipboardHotkeyEnabled
+                ? HotkeyFormatter.FormatClipboard(settings)
+                : string.Empty;
+        }
+    }
+
+    /// <summary>Sélection d'une zone à l'écran.</summary>
     private void ProcessRegionCapture()
     {
         if (_regionCaptureBusy)
             return;
 
+        DismissActiveBalloon();
         _regionCaptureBusy = true;
         try
         {
@@ -117,16 +187,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    /// <summary>Menu : image déjà dans le presse-papiers.</summary>
-    private void ProcessClipboardImage()
+    /// <summary>Image déjà dans le presse-papiers.</summary>
+    private void ProcessClipboardImage(bool showErrorIfEmpty)
     {
+        DismissActiveBalloon();
+
         if (!QrClipboardReader.TryGetBitmapFromClipboard(out Bitmap? bitmap))
         {
-            _tray.ShowBalloonTip(
-                BalloonTimeoutMs,
-                "CopyDecrypt",
-                "Le presse-papiers ne contient pas d'image. Faites une capture (Win+Maj+S) puis choisissez cette commande, ou utilisez le raccourci pour encadrer une zone.",
-                ToolTipIcon.Info);
+            if (showErrorIfEmpty)
+            {
+                _tray.ShowBalloonTip(
+                    BalloonTimeoutMs,
+                    "CopyDecrypt",
+                    "Le presse-papiers ne contient pas d'image.",
+                    ToolTipIcon.Info);
+            }
+
             return;
         }
 
@@ -137,6 +213,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void DismissActiveBalloon()
+    {
+        _lastClickableUrl = null;
+        if (!_tray.Visible)
+            return;
+
+        // WinForms n'expose pas de fermeture explicite : masquer/réafficher l'icône retire la bulle/toast en cours.
+        _tray.Visible = false;
+        _tray.Visible = true;
+    }
+
     private void ApplyExtractionOutcome(ClipboardImageTextExtractor.ExtractOutcome outcome)
     {
         _lastClickableUrl = null;
@@ -144,7 +231,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (string.IsNullOrEmpty(outcome.Text))
         {
             var msg = string.IsNullOrWhiteSpace(outcome.FailureMessage)
-                ? "Aucun QR lisible et aucun texte exploitable (OCR) dans l’image."
+                ? "Aucun contenu lisible dans l'image."
                 : outcome.FailureMessage;
             _tray.ShowBalloonTip(BalloonTimeoutMs, "CopyDecrypt", msg, ToolTipIcon.Warning);
             return;

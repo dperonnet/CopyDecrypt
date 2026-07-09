@@ -33,6 +33,8 @@ internal static class QrClipboardReader
         },
     };
 
+    internal static bool ClipboardContainsImage() => Clipboard.ContainsImage();
+
     internal static bool TryGetBitmapFromClipboard([NotNullWhen(true)] out Bitmap? bitmap)
     {
         bitmap = null;

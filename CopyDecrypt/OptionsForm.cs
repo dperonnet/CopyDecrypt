@@ -4,52 +4,32 @@ namespace CopyDecrypt;
 
 internal sealed class OptionsForm : Form
 {
-    private const int LabelColumnWidthPx = 118;
-    private const int HotkeyComboWidthPx = 88;
+    private const int LabelColumnWidthPx = 200;
+    private const int HotkeyComboWidthPx = 96;
     private const int HotkeyDropdownWidthPx = 220;
     private const int RowPaddingY = 6;
     private const int HotkeyInnerGapX = 6;
+    private const int FormClientWidthPx = 654;
+    private const int FormClientHeightPx = 375;
+    private const int DoubleClickComboWidthPx = 260;
 
     private readonly SettingsStore _store;
     private readonly Action _onApplied;
-    private readonly CheckBox _chkHotkeyEnabled = new()
+    private readonly HotkeyEditor _regionHotkey = new();
+    private readonly HotkeyEditor _clipboardHotkey = new();
+    private readonly ComboBox _cmbDoubleClick = new()
     {
-        Text = "Activer le raccourci",
-        AutoSize = true,
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = DoubleClickComboWidthPx,
         Margin = new Padding(0, RowPaddingY, 0, 0),
     };
     private readonly CheckBox _chkUrlMode = new()
     {
-        Text = "Mode URL (corriger les erreurs OCR d’URL)",
+        Text = "Optimiser la lecture d'URL",
         AutoSize = true,
         Anchor = AnchorStyles.Top | AnchorStyles.Left,
         Dock = DockStyle.None,
         Margin = new Padding(0, RowPaddingY, 0, 0),
-    };
-    private readonly CheckBox _chkCtrl = new()
-    {
-        Text = "Ctrl",
-        AutoSize = true,
-        Margin = Padding.Empty,
-    };
-    private readonly CheckBox _chkShift = new()
-    {
-        Text = "Maj",
-        AutoSize = true,
-        Margin = Padding.Empty,
-    };
-    private readonly CheckBox _chkAlt = new()
-    {
-        Text = "Alt",
-        AutoSize = true,
-        Margin = Padding.Empty,
-    };
-    private readonly ComboBox _cmbKey = new()
-    {
-        DropDownStyle = ComboBoxStyle.DropDownList,
-        DropDownWidth = HotkeyDropdownWidthPx,
-        Width = HotkeyComboWidthPx,
-        Margin = new Padding(HotkeyInnerGapX, 0, 0, 0),
     };
     private readonly CheckBox _chkStartup = new()
     {
@@ -70,10 +50,12 @@ internal sealed class OptionsForm : Form
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(520, 216);
+        ClientSize = new Size(FormClientWidthPx, FormClientHeightPx);
         Padding = new Padding(16);
 
-        FillKeyCombo();
+        _regionHotkey.FillKeyCombo();
+        _clipboardHotkey.FillKeyCombo();
+        FillDoubleClickCombo();
 
         var btnPanel = new FlowLayoutPanel
         {
@@ -89,30 +71,49 @@ internal sealed class OptionsForm : Form
         AcceptButton = btnOk;
         CancelButton = btnCancel;
 
-        var panel = new TableLayoutPanel
+        var shortcutsTable = CreateOptionTable(4);
+        shortcutsTable.Controls.Add(OptionLabel("Sélection de zone :", RowPaddingY), 0, 0);
+        shortcutsTable.Controls.Add(_regionHotkey.EnabledCheckBox, 1, 0);
+        shortcutsTable.Controls.Add(OptionLabel(string.Empty, RowPaddingY), 0, 1);
+        shortcutsTable.Controls.Add(_regionHotkey.OptionsHost, 1, 1);
+        shortcutsTable.Controls.Add(OptionLabel("Analyse du presse-papiers :", RowPaddingY), 0, 2);
+        shortcutsTable.Controls.Add(_clipboardHotkey.EnabledCheckBox, 1, 2);
+        shortcutsTable.Controls.Add(OptionLabel(string.Empty, RowPaddingY), 0, 3);
+        shortcutsTable.Controls.Add(_clipboardHotkey.OptionsHost, 1, 3);
+
+        var behaviorTable = CreateOptionTable(3);
+        behaviorTable.Controls.Add(OptionLabel("Mode URL :", RowPaddingY), 0, 0);
+        behaviorTable.Controls.Add(_chkUrlMode, 1, 0);
+        behaviorTable.Controls.Add(OptionLabel("Démarrage :", RowPaddingY), 0, 1);
+        behaviorTable.Controls.Add(_chkStartup, 1, 1);
+        behaviorTable.Controls.Add(OptionLabel("Double-clic :", RowPaddingY), 0, 2);
+        behaviorTable.Controls.Add(_cmbDoubleClick, 1, 2);
+
+        var stack = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+            Width = FormClientWidthPx - 32,
+        };
+        stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stack.Controls.Add(CreateGroup("Raccourcis", shortcutsTable), 0, 0);
+        stack.Controls.Add(CreateGroup("Comportement", behaviorTable), 0, 1);
+
+        var content = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 4,
+            AutoScroll = true,
+            Padding = Padding.Empty,
         };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidthPx));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // activation hotkey
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // config hotkey
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // démarrage
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // mode URL
-
-        panel.Controls.Add(OptionLabel("Raccourcis :", RowPaddingY), 0, 0);
-        panel.Controls.Add(_chkHotkeyEnabled, 1, 0);
-        panel.Controls.Add(OptionLabel("Raccourcis :", RowPaddingY), 0, 1);
-        panel.Controls.Add(HotkeyOptionsHost(), 1, 1);
-        panel.Controls.Add(OptionLabel("Démarrage :", RowPaddingY), 0, 2);
-        panel.Controls.Add(_chkStartup, 1, 2);
-        panel.Controls.Add(OptionLabel("OCR :", RowPaddingY), 0, 3);
-        panel.Controls.Add(_chkUrlMode, 1, 3);
+        content.Controls.Add(stack);
 
         Controls.Add(btnPanel);
-        Controls.Add(panel);
+        Controls.Add(content);
 
         btnOk.Click += (_, _) =>
         {
@@ -121,7 +122,42 @@ internal sealed class OptionsForm : Form
         };
         btnCancel.Click += (_, _) => Close();
 
-        _chkHotkeyEnabled.CheckedChanged += (_, _) => UpdateHotkeyEnabledUi();
+        _regionHotkey.EnabledCheckBox.CheckedChanged += (_, _) => _regionHotkey.UpdateEnabledUi();
+        _clipboardHotkey.EnabledCheckBox.CheckedChanged += (_, _) => _clipboardHotkey.UpdateEnabledUi();
+    }
+
+    private static TableLayoutPanel CreateOptionTable(int rowCount)
+    {
+        var panel = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = rowCount,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+            Dock = DockStyle.Top,
+            Width = FormClientWidthPx - 56,
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidthPx));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        for (var i = 0; i < rowCount; i++)
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        return panel;
+    }
+
+    private static GroupBox CreateGroup(string title, Control content)
+    {
+        var group = new GroupBox
+        {
+            Text = title,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(10, 6, 10, 10),
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        group.Controls.Add(content);
+        return group;
     }
 
     private static Label OptionLabel(string text, int marginTop) => new()
@@ -135,51 +171,17 @@ internal sealed class OptionsForm : Form
         Margin = new Padding(0, marginTop, 8, 0),
     };
 
-    private Control HotkeyOptionsHost()
+    private void FillDoubleClickCombo()
     {
-        var host = new Panel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.None,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left,
-            Margin = new Padding(0, RowPaddingY, 0, 0),
-        };
-        host.Controls.Add(HotkeyOptions());
-        return host;
+        _cmbDoubleClick.Items.Clear();
+        _cmbDoubleClick.Items.Add(new DoubleClickChoice(
+            TrayDoubleClickAction.RegionCapture,
+            "Sélectionner une zone à l'écran"));
+        _cmbDoubleClick.Items.Add(new DoubleClickChoice(
+            TrayDoubleClickAction.ClipboardImage,
+            "Lire l'image du presse-papiers"));
+        _cmbDoubleClick.SelectedIndex = 0;
     }
-
-    private FlowLayoutPanel HotkeyOptions()
-    {
-        var f = new FlowLayoutPanel
-        {
-            Dock = DockStyle.None,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Padding = Padding.Empty,
-            Margin = Padding.Empty,
-        };
-        f.Controls.Add(_chkCtrl);
-        f.Controls.Add(Plus());
-        f.Controls.Add(_chkShift);
-        f.Controls.Add(Plus());
-        f.Controls.Add(_chkAlt);
-        f.Controls.Add(Plus());
-        f.Controls.Add(_cmbKey);
-        return f;
-    }
-
-    private static Label Plus() => new()
-    {
-        Text = "+",
-        AutoSize = true,
-        TextAlign = ContentAlignment.MiddleCenter,
-        ForeColor = SystemColors.GrayText,
-        Margin = new Padding(HotkeyInnerGapX, 0, HotkeyInnerGapX, 0),
-    };
 
     protected override void OnShown(EventArgs e)
     {
@@ -187,92 +189,54 @@ internal sealed class OptionsForm : Form
         LoadFromSettings();
     }
 
-    private void FillKeyCombo()
-    {
-        _cmbKey.Items.Clear();
-        foreach (var (vk, label) in HotkeyVirtualKeys.Choices)
-            _cmbKey.Items.Add(new HotkeyKeyChoice(vk, label));
-    }
-
     private void LoadFromSettings()
     {
         var s = _store.Load();
-        _chkHotkeyEnabled.Checked = s.HotkeyEnabled;
+        _regionHotkey.Load(s.HotkeyEnabled, s.HotkeyModifiers, s.HotkeyVirtualKey);
+        _clipboardHotkey.Load(s.ClipboardHotkeyEnabled, s.ClipboardHotkeyModifiers, s.ClipboardHotkeyVirtualKey);
         _chkUrlMode.Checked = s.UrlModeEnabled;
-        _chkCtrl.Checked = (s.HotkeyModifiers & NativeMethods.ModControl) != 0;
-        _chkShift.Checked = (s.HotkeyModifiers & NativeMethods.ModShift) != 0;
-        _chkAlt.Checked = (s.HotkeyModifiers & NativeMethods.ModAlt) != 0;
         _chkStartup.Checked = s.StartWithWindows;
-        SelectKey(s.HotkeyVirtualKey);
-
-        UpdateHotkeyEnabledUi();
+        SelectDoubleClick(s.DoubleClickAction);
     }
 
-    private void UpdateHotkeyEnabledUi()
+    private void SelectDoubleClick(TrayDoubleClickAction action)
     {
-        var enabled = _chkHotkeyEnabled.Checked;
-        _chkCtrl.Enabled = enabled;
-        _chkShift.Enabled = enabled;
-        _chkAlt.Enabled = enabled;
-        _cmbKey.Enabled = enabled;
-    }
-
-    private void SelectKey(uint vk)
-    {
-        if (TrySelectVk(vk))
-            return;
-        if (vk != HotkeyVirtualKeys.DefaultVirtualKey && TrySelectVk(HotkeyVirtualKeys.DefaultVirtualKey))
-            return;
-        if (_cmbKey.Items.Count > 0)
-            _cmbKey.SelectedIndex = 0;
-    }
-
-    private bool TrySelectVk(uint vk)
-    {
-        for (var i = 0; i < _cmbKey.Items.Count; i++)
+        for (var i = 0; i < _cmbDoubleClick.Items.Count; i++)
         {
-            if (_cmbKey.Items[i] is HotkeyKeyChoice c && c.VirtualKey == vk)
+            if (_cmbDoubleClick.Items[i] is DoubleClickChoice c && c.Action == action)
             {
-                _cmbKey.SelectedIndex = i;
-                return true;
+                _cmbDoubleClick.SelectedIndex = i;
+                return;
             }
         }
 
-        return false;
+        _cmbDoubleClick.SelectedIndex = 0;
     }
 
     private bool TrySave()
     {
-        if (_chkHotkeyEnabled.Checked && !_chkCtrl.Checked && !_chkShift.Checked && !_chkAlt.Checked)
+        if (!_regionHotkey.TryValidate("sélection de zone", out var regionMods, out var regionVk))
+            return false;
+
+        if (!_clipboardHotkey.TryValidate("analyse du presse-papiers", out var clipboardMods, out var clipboardVk))
+            return false;
+
+        if (_cmbDoubleClick.SelectedItem is not DoubleClickChoice doubleClick)
         {
-            MessageBox.Show(
-                "Choisissez au moins une touche de modification (Ctrl, Maj ou Alt).",
-                "CopyDecrypt",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show("Choisissez une action pour le double-clic.", "CopyDecrypt", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
-
-        if (_cmbKey.SelectedItem is not HotkeyKeyChoice choice)
-        {
-            MessageBox.Show("Choisissez une touche.", "CopyDecrypt", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return false;
-        }
-
-        uint mods = 0;
-        if (_chkCtrl.Checked)
-            mods |= NativeMethods.ModControl;
-        if (_chkShift.Checked)
-            mods |= NativeMethods.ModShift;
-        if (_chkAlt.Checked)
-            mods |= NativeMethods.ModAlt;
 
         var settings = new AppSettings
         {
-            HotkeyEnabled = _chkHotkeyEnabled.Checked,
+            HotkeyEnabled = _regionHotkey.EnabledCheckBox.Checked,
+            HotkeyModifiers = regionMods,
+            HotkeyVirtualKey = regionVk,
+            ClipboardHotkeyEnabled = _clipboardHotkey.EnabledCheckBox.Checked,
+            ClipboardHotkeyModifiers = clipboardMods,
+            ClipboardHotkeyVirtualKey = clipboardVk,
+            DoubleClickAction = doubleClick.Action,
             UrlModeEnabled = _chkUrlMode.Checked,
-            HotkeyModifiers = mods,
-            HotkeyVirtualKey = choice.VirtualKey,
             StartWithWindows = _chkStartup.Checked,
         };
         settings.Sanitize();
@@ -280,6 +244,156 @@ internal sealed class OptionsForm : Form
         StartupManager.Apply(settings.StartWithWindows);
         _onApplied();
         return true;
+    }
+
+    private readonly record struct DoubleClickChoice(TrayDoubleClickAction Action, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    private sealed class HotkeyEditor
+    {
+        internal CheckBox EnabledCheckBox { get; } = new()
+        {
+            Text = "Activer le raccourci",
+            AutoSize = true,
+            Margin = new Padding(0, RowPaddingY, 0, 0),
+        };
+
+        internal Control OptionsHost { get; }
+
+        private readonly CheckBox _chkCtrl = new() { Text = "Ctrl", AutoSize = true, Margin = Padding.Empty };
+        private readonly CheckBox _chkShift = new() { Text = "Maj", AutoSize = true, Margin = Padding.Empty };
+        private readonly CheckBox _chkAlt = new() { Text = "Alt", AutoSize = true, Margin = Padding.Empty };
+        private readonly ComboBox _cmbKey = new()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            DropDownWidth = HotkeyDropdownWidthPx,
+            Width = HotkeyComboWidthPx,
+            Margin = new Padding(HotkeyInnerGapX, 0, 0, 0),
+        };
+
+        internal HotkeyEditor()
+        {
+            OptionsHost = BuildOptions();
+        }
+
+        private FlowLayoutPanel BuildOptions()
+        {
+            var f = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Dock = DockStyle.Fill,
+                Padding = Padding.Empty,
+                Margin = new Padding(0, RowPaddingY, 0, 0),
+            };
+            f.Controls.Add(_chkCtrl);
+            f.Controls.Add(Plus());
+            f.Controls.Add(_chkShift);
+            f.Controls.Add(Plus());
+            f.Controls.Add(_chkAlt);
+            f.Controls.Add(Plus());
+            f.Controls.Add(_cmbKey);
+            return f;
+        }
+
+        internal void FillKeyCombo()
+        {
+            _cmbKey.Items.Clear();
+            foreach (var (vk, label) in HotkeyVirtualKeys.Choices)
+                _cmbKey.Items.Add(new HotkeyKeyChoice(vk, label));
+        }
+
+        internal void Load(bool enabled, uint modifiers, uint virtualKey)
+        {
+            EnabledCheckBox.Checked = enabled;
+            _chkCtrl.Checked = (modifiers & NativeMethods.ModControl) != 0;
+            _chkShift.Checked = (modifiers & NativeMethods.ModShift) != 0;
+            _chkAlt.Checked = (modifiers & NativeMethods.ModAlt) != 0;
+            SelectKey(virtualKey);
+            UpdateEnabledUi();
+        }
+
+        internal void UpdateEnabledUi()
+        {
+            var enabled = EnabledCheckBox.Checked;
+            _chkCtrl.Enabled = enabled;
+            _chkShift.Enabled = enabled;
+            _chkAlt.Enabled = enabled;
+            _cmbKey.Enabled = enabled;
+        }
+
+        internal bool TryValidate(string label, out uint modifiers, out uint virtualKey)
+        {
+            modifiers = 0;
+            virtualKey = 0;
+
+            if (!EnabledCheckBox.Checked)
+                return true;
+
+            if (!_chkCtrl.Checked && !_chkShift.Checked && !_chkAlt.Checked)
+            {
+                MessageBox.Show(
+                    $"Raccourci {label} : choisissez au moins une touche de modification (Ctrl, Maj ou Alt).",
+                    "CopyDecrypt",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return false;
+            }
+
+            if (_cmbKey.SelectedItem is not HotkeyKeyChoice choice)
+            {
+                MessageBox.Show(
+                    $"Raccourci {label} : choisissez une touche.",
+                    "CopyDecrypt",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return false;
+            }
+
+            if (_chkCtrl.Checked)
+                modifiers |= NativeMethods.ModControl;
+            if (_chkShift.Checked)
+                modifiers |= NativeMethods.ModShift;
+            if (_chkAlt.Checked)
+                modifiers |= NativeMethods.ModAlt;
+            virtualKey = choice.VirtualKey;
+            return true;
+        }
+
+        private void SelectKey(uint vk)
+        {
+            if (TrySelectVk(vk))
+                return;
+            if (_cmbKey.Items.Count > 0)
+                _cmbKey.SelectedIndex = 0;
+        }
+
+        private bool TrySelectVk(uint vk)
+        {
+            for (var i = 0; i < _cmbKey.Items.Count; i++)
+            {
+                if (_cmbKey.Items[i] is HotkeyKeyChoice c && c.VirtualKey == vk)
+                {
+                    _cmbKey.SelectedIndex = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Label Plus() => new()
+        {
+            Text = "+",
+            AutoSize = true,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = SystemColors.GrayText,
+            Margin = new Padding(HotkeyInnerGapX, 0, HotkeyInnerGapX, 0),
+        };
     }
 
     private readonly record struct HotkeyKeyChoice(uint VirtualKey, string Label)

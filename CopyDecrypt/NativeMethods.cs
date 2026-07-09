@@ -12,7 +12,8 @@ internal static class NativeMethods
     /// <summary>Windows 7+ : pas de répétition auto si la touche reste enfoncée.</summary>
     internal const uint ModNorepeat = 0x4000;
 
-    internal const int HotkeyId = 0x4C44; // 'LD'
+    internal const int HotkeyIdRegion = 0x4C44; // 'LD'
+    internal const int HotkeyIdClipboard = 0x4C45; // 'LE'
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);

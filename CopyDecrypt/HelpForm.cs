@@ -4,22 +4,28 @@ namespace CopyDecrypt;
 
 internal sealed class HelpForm : Form
 {
+    private const int HelpContentWidthPx = 600;
+    private const int ExtraVerticalPaddingPx = 20;
+
+    private readonly TextBox _body;
+    private readonly FlowLayoutPanel _bottomBar;
+
     internal HelpForm()
     {
         Text = "Aide — CopyDecrypt";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterParent;
+        // Positionnement manuel : centré sur l'écran du curseur (icône tray / menu).
+        StartPosition = FormStartPosition.Manual;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(520, 460);
         Padding = new Padding(12);
 
-        var body = new TextBox
+        _body = new TextBox
         {
             Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
+            ScrollBars = ScrollBars.None,
             Dock = DockStyle.Fill,
             BorderStyle = BorderStyle.None,
             TabStop = false,
@@ -36,44 +42,87 @@ internal sealed class HelpForm : Form
             Anchor = AnchorStyles.Right,
         };
 
-        var bottom = new FlowLayoutPanel
+        _bottomBar = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft,
             Dock = DockStyle.Bottom,
             AutoSize = true,
             Padding = new Padding(0, 12, 0, 0),
         };
-        bottom.Controls.Add(btn);
+        _bottomBar.Controls.Add(btn);
 
         AcceptButton = btn;
 
-        Controls.Add(body);
-        Controls.Add(bottom);
+        Controls.Add(_body);
+        Controls.Add(_bottomBar);
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        ClientSize = MeasureClientSize();
+        CenterOnCursorScreen();
+    }
+
+    private void CenterOnCursorScreen()
+    {
+        var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = new Point(
+            workArea.Left + (workArea.Width - Width) / 2,
+            workArea.Top + (workArea.Height - Height) / 2);
+    }
+
+    private Size MeasureClientSize()
+    {
+        var clientWidth = HelpContentWidthPx + Padding.Horizontal;
+
+        var textHeight = TextRenderer.MeasureText(
+            HelpText,
+            _body.Font,
+            new Size(HelpContentWidthPx, int.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+
+        var bottomHeight = MeasureBottomBarHeight(clientWidth);
+
+        return new Size(
+            clientWidth,
+            textHeight + bottomHeight + Padding.Vertical + ExtraVerticalPaddingPx);
+    }
+
+    private int MeasureBottomBarHeight(int clientWidth)
+    {
+        _bottomBar.PerformLayout();
+        var preferred = _bottomBar.GetPreferredSize(new Size(clientWidth, 0)).Height;
+        if (preferred > _bottomBar.Padding.Vertical)
+            return preferred;
+
+        if (_bottomBar.Controls.Count > 0)
+        {
+            var button = _bottomBar.Controls[0];
+            return button.GetPreferredSize(Size.Empty).Height + _bottomBar.Padding.Vertical;
+        }
+
+        return _bottomBar.Padding.Vertical;
     }
 
     private const string HelpText =
 """
-CopyDecrypt lit un QR code ou du texte (OCR) dans une image, puis place le résultat (souvent une URL) dans le presse-papiers pour que vous puissiez le coller (Ctrl+V).
+CopyDecrypt lit le texte ou le QR code d'une image dans le presse-papiers ou de la zone d'écran sélectionnée.
+Le texte ou le QR code est ensuite copié dans le presse-papiers. 
 
-• Raccourci global (défaut : Alt+Maj+C, modifiable dans Options)
-  L’écran s’assombrit : tracez un rectangle avec le bouton gauche de la souris autour de la zone à analyser (comme l’outil Capture d’écran Windows). Relâchez pour capturer cette zone et lancer la lecture. Échap ou clic droit annule.
+Lorsque le texte ou le QR code est détecté, une notification résume le résultat et propose de l'ouvrir lorsqu'il s'agit d'un lien.
 
-• Double-clic sur l’icône dans la zone de notification
-  Même action que le raccourci (sélection d’une zone à l’écran).
+Attention : Soyez prudent lorsque vous utilisez cette application. Un QR code peut contenir un lien vers un site web malveillant.
 
-• Menu contextuel (clic droit sur l’icône)
-  — « Lire l’image du presse-papiers » : utilise l’image déjà copiée dans le presse-papiers (par ex. après Win+Maj+S puis collage automatique de la capture). Aucun cadre à tracer.
-  — « Aide… » : cette fenêtre.
-  — « Options… » : raccourci global (Ctrl / Maj / Alt + touche), lancement au démarrage de l’ordinateur.
-  — « Quitter » : ferme l’application (icône disparaît).
+L'application propose deux modes de fonctionnement :
+- Sélection de zone écran : tracez un rectangle de sélection (Échap ou clic droit pour annuler).
+- Analyse du presse-papiers : analyse l'image actuellement copiée dans le presse-papiers.
 
-• Résultat
-  Si une URL est détectée, seule l’adresse est copiée. Sinon, le texte lu (QR ou OCR) est copié tel quel. Une bulle de notification résume le résultat ou l’erreur.
+Vous pouvez définir un raccourcis pour chaque mode.
 
-• Conseils
-  Pour l’OCR : texte net, bon contraste, langues de reconnaissance installées dans Windows. Pour le QR : le code doit être entièrement visible dans la zone ou l’image.
+Si le même raccourcis est configuré pour les deux modes (Sélection de zone écran et Analyse du presse-papiers):
+- l'application tente de décrypter l'image dans le presse-papiers si elle est présente, 
+- sinon l'application active le mode sélection de zone.
 
-• Licence
-  CopyDecrypt est distribué sous licence MIT (voir le fichier LICENSE).
 """;
 }

@@ -2,8 +2,10 @@
 Application Windows (WinForms) en zone de notification qui lit **un QR code** ou du **texte via OCR** depuis une image (capture d’une zone écran ou image déjà dans le presse‑papiers), puis copie le résultat (souvent une **URL normalisée**) dans le presse‑papiers.
 
 ### Fonctionnalités
-- **Raccourci global** (activable/désactivable) pour capturer une zone de l’écran.
-- **Menu tray** : lire l’image du presse‑papiers, options, aide.
+- **Raccourcis globaux** (activables/désactivables) : zone écran et image du presse‑papiers.
+- Si les deux raccourcis sont identiques : image dans le presse‑papiers → lecture directe, sinon → sélection de zone.
+- **Double-clic** sur l’icône : action configurable (zone ou presse‑papiers).
+- **Menu tray** (clic droit) : sélection de zone, presse‑papiers, options, aide.
 - **QR** via ZXing, **OCR** via Tesseract (hors‑ligne).
 - **Option “Mode URL (OCR)”** : normalise la ponctuation/espaces d’une URL OCR, sans “deviner” de caractères.
 - **Démarrage Windows** optionnel (HKCU Run).

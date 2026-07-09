@@ -3,19 +3,27 @@ using System.Runtime.InteropServices;
 namespace CopyDecrypt;
 
 /// <summary>
-/// Fenêtre invisible pour la boucle de messages Windows et l'enregistrement du raccourci global.
+/// Fenêtre invisible pour la boucle de messages Windows et l'enregistrement des raccourcis globaux.
 /// </summary>
 internal sealed class HotkeyForm : Form
 {
-    private readonly Action _onHotkey;
+    private readonly Action _onRegion;
+    private readonly Action _onClipboard;
+    private readonly Action _onSmartCombined;
     private readonly SettingsStore _settings;
-    private bool _registered;
+    private bool _registeredRegion;
+    private bool _registeredClipboard;
 
-    internal HotkeyForm(Action onHotkey, SettingsStore settings)
+    internal HotkeyForm(
+        Action onRegion,
+        Action onClipboard,
+        Action onSmartCombined,
+        SettingsStore settings)
     {
-        _onHotkey = onHotkey;
+        _onRegion = onRegion;
+        _onClipboard = onClipboard;
+        _onSmartCombined = onSmartCombined;
         _settings = settings;
-        // Fenêtre “fantôme” : doit exister pour recevoir WM_HOTKEY, mais ne doit jamais apparaître.
         FormBorderStyle = FormBorderStyle.FixedToolWindow;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -46,32 +54,73 @@ internal sealed class HotkeyForm : Form
         if (IsDisposed)
             return;
 
-        if (_registered && IsHandleCreated)
+        UnregisterAll();
+        Register();
+    }
+
+    private void UnregisterAll()
+    {
+        if (!IsHandleCreated)
+            return;
+
+        if (_registeredRegion)
         {
-            NativeMethods.UnregisterHotKey(Handle, NativeMethods.HotkeyId);
-            _registered = false;
+            NativeMethods.UnregisterHotKey(Handle, NativeMethods.HotkeyIdRegion);
+            _registeredRegion = false;
         }
 
-        Register();
+        if (_registeredClipboard)
+        {
+            NativeMethods.UnregisterHotKey(Handle, NativeMethods.HotkeyIdClipboard);
+            _registeredClipboard = false;
+        }
     }
 
     private void Register()
     {
-        if (_registered || IsDisposed || !IsHandleCreated)
+        if (IsDisposed || !IsHandleCreated)
             return;
 
         var cfg = _settings.Load();
-        if (!cfg.HotkeyEnabled)
+
+        if (cfg.AreHotkeysIdentical())
+        {
+            RegisterOne(
+                NativeMethods.HotkeyIdRegion,
+                cfg.HotkeyModifiers,
+                cfg.HotkeyVirtualKey,
+                HotkeyFormatter.FormatRegion(cfg),
+                ref _registeredRegion);
             return;
+        }
 
-        // RegisterHotKey exige des VK_* + MOD_* ; MOD_NOREPEAT évite les répétitions tant que la touche reste enfoncée.
-        uint modifiers = cfg.HotkeyModifiers | NativeMethods.ModNorepeat;
-        uint vk = cfg.HotkeyVirtualKey;
+        if (cfg.HotkeyEnabled)
+        {
+            RegisterOne(
+                NativeMethods.HotkeyIdRegion,
+                cfg.HotkeyModifiers,
+                cfg.HotkeyVirtualKey,
+                HotkeyFormatter.FormatRegion(cfg),
+                ref _registeredRegion);
+        }
 
-        if (!NativeMethods.RegisterHotKey(Handle, NativeMethods.HotkeyId, modifiers, vk))
+        if (cfg.ClipboardHotkeyEnabled)
+        {
+            RegisterOne(
+                NativeMethods.HotkeyIdClipboard,
+                cfg.ClipboardHotkeyModifiers,
+                cfg.ClipboardHotkeyVirtualKey,
+                HotkeyFormatter.FormatClipboard(cfg),
+                ref _registeredClipboard);
+        }
+    }
+
+    private void RegisterOne(int id, uint modifiers, uint vk, string label, ref bool registeredFlag)
+    {
+        uint mods = modifiers | NativeMethods.ModNorepeat;
+        if (!NativeMethods.RegisterHotKey(Handle, id, mods, vk))
         {
             var err = Marshal.GetLastWin32Error();
-            var label = HotkeyFormatter.Format(cfg);
             MessageBox.Show(
                 $"Impossible d'enregistrer le raccourci {label} (erreur {err}). Un autre programme l'utilise peut‑être.",
                 "CopyDecrypt",
@@ -80,16 +129,34 @@ internal sealed class HotkeyForm : Form
             return;
         }
 
-        _registered = true;
+        registeredFlag = true;
     }
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == NativeMethods.WmHotkey && m.WParam.ToInt32() == NativeMethods.HotkeyId)
+        if (m.Msg == NativeMethods.WmHotkey)
         {
+            var id = m.WParam.ToInt32();
             try
             {
-                _onHotkey();
+                var cfg = _settings.Load();
+                if (cfg.AreHotkeysIdentical() && id == NativeMethods.HotkeyIdRegion)
+                {
+                    _onSmartCombined();
+                    return;
+                }
+
+                if (id == NativeMethods.HotkeyIdRegion)
+                {
+                    _onRegion();
+                    return;
+                }
+
+                if (id == NativeMethods.HotkeyIdClipboard)
+                {
+                    _onClipboard();
+                    return;
+                }
             }
             catch (Exception ex)
             {
@@ -104,12 +171,7 @@ internal sealed class HotkeyForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        if (_registered && IsHandleCreated && !IsDisposed)
-        {
-            NativeMethods.UnregisterHotKey(Handle, NativeMethods.HotkeyId);
-            _registered = false;
-        }
-
+        UnregisterAll();
         base.OnFormClosed(e);
     }
 }

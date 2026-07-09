@@ -2,18 +2,21 @@ namespace CopyDecrypt;
 
 internal static class HotkeyFormatter
 {
-    internal static string Format(AppSettings s)
+    internal static string FormatRegion(AppSettings s) => Format(s.HotkeyModifiers, s.HotkeyVirtualKey);
+
+    internal static string FormatClipboard(AppSettings s) =>
+        Format(s.ClipboardHotkeyModifiers, s.ClipboardHotkeyVirtualKey);
+
+    internal static string Format(uint modifiers, uint virtualKey)
     {
         var parts = new List<string>();
-        if ((s.HotkeyModifiers & NativeMethods.ModAlt) != 0)
+        if ((modifiers & NativeMethods.ModAlt) != 0)
             parts.Add("Alt");
-        if ((s.HotkeyModifiers & NativeMethods.ModControl) != 0)
+        if ((modifiers & NativeMethods.ModControl) != 0)
             parts.Add("Ctrl");
-        if ((s.HotkeyModifiers & NativeMethods.ModShift) != 0)
+        if ((modifiers & NativeMethods.ModShift) != 0)
             parts.Add("Maj");
-        parts.Add(FormatVirtualKey(s.HotkeyVirtualKey));
+        parts.Add(HotkeyVirtualKeys.FormatLabel(virtualKey));
         return string.Join("+", parts);
     }
-
-    private static string FormatVirtualKey(uint vk) => HotkeyVirtualKeys.FormatLabel(vk);
 }
